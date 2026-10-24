@@ -1,2 +1,1 @@
-# System-level packages for Streamlit Community Cloud deployment
 ffmpeg
