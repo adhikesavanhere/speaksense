@@ -18,9 +18,12 @@ from typing import List, Optional, Tuple
 
 try:
     import mediapipe as mp
-    MEDIAPIPE_AVAILABLE = True
-    _mp_face_mesh = mp.solutions.face_mesh
-except ImportError:
+    try:
+        _mp_face_mesh = mp.solutions.face_mesh
+    except AttributeError:
+        import mediapipe.python.solutions.face_mesh as _mp_face_mesh
+    MEDIAPIPE_AVAILABLE = _mp_face_mesh is not None
+except (ImportError, AttributeError, Exception):
     MEDIAPIPE_AVAILABLE = False
     _mp_face_mesh = None
 
@@ -113,6 +116,79 @@ def _compute_mouth_aperture(landmarks, img_w: int, img_h: int) -> Optional[float
         return None
 
 
+def _analyze_frames_opencv_fallback(
+    frames: List[FrameSample]
+) -> FaceAnalysisResult:
+    """
+    Fallback face and mouth analysis using OpenCV's built-in Haar Cascades
+    when MediaPipe solutions are not available in the runtime environment.
+    """
+    face_cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    face_cascade = cv2.CascadeClassifier(face_cascade_path)
+    frame_analyses: List[FrameAnalysis] = []
+
+    for fs in frames:
+        frame_bgr = fs.frame
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape[:2]
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
+
+        if len(faces) == 0:
+            frame_analyses.append(FrameAnalysis(
+                timestamp_sec=fs.timestamp_sec,
+                face_detected=False,
+                mouth_aperture=None,
+                warning="No face detected",
+            ))
+            continue
+
+        # Select face closest to center
+        cx, cy = w / 2, h / 2
+        best_face = min(faces, key=lambda f: (f[0] + f[2]/2 - cx)**2 + (f[1] + f[3]/2 - cy)**2)
+        fx, fy, fw, fh = best_face
+
+        # Mouth region: lower 35% of face, center 60% horizontally
+        my = int(fy + 0.65 * fh)
+        mh = int(0.32 * fh)
+        mx = int(fx + 0.2 * fw)
+        mw = int(0.6 * fw)
+
+        mouth_roi = gray[max(0, my):min(h, my+mh), max(0, mx):min(w, mx+mw)]
+        if mouth_roi.size > 0:
+            _, thresh = cv2.threshold(mouth_roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            openness = float(np.mean(thresh > 0)) * (mh / max(1, fw))
+            frame_analyses.append(FrameAnalysis(
+                timestamp_sec=fs.timestamp_sec,
+                face_detected=True,
+                mouth_aperture=openness,
+            ))
+        else:
+            frame_analyses.append(FrameAnalysis(
+                timestamp_sec=fs.timestamp_sec,
+                face_detected=True,
+                mouth_aperture=0.1,
+            ))
+
+    detected = [fa for fa in frame_analyses if fa.face_detected and fa.mouth_aperture is not None]
+    detection_rate = len(detected) / len(frame_analyses) if frame_analyses else 0.0
+
+    timestamps = np.array([fa.timestamp_sec for fa in detected])
+    apertures = np.array([fa.mouth_aperture for fa in detected])
+
+    warnings = [
+        "MediaPipe FaceMesh was not available in this host environment; "
+        "OpenCV face-cascade fallback was used."
+    ]
+    return FaceAnalysisResult(
+        frame_analyses=frame_analyses,
+        timestamps=timestamps,
+        apertures=apertures,
+        face_detection_rate=detection_rate,
+        errors=[],
+        warnings=warnings,
+    )
+
+
 def analyze_frames(
     frames: List[FrameSample],
     min_detection_confidence: float = 0.5,
@@ -141,13 +217,8 @@ def analyze_frames(
     frame_analyses: List[FrameAnalysis] = []
 
     if not MEDIAPIPE_AVAILABLE:
-        return FaceAnalysisResult(
-            frame_analyses=[],
-            timestamps=np.array([]),
-            apertures=np.array([]),
-            face_detection_rate=0.0,
-            errors=["MediaPipe is not installed. Face analysis unavailable."],
-        )
+        # Fall back to OpenCV Haar Cascade tracking if MediaPipe solutions are unavailable
+        return _analyze_frames_opencv_fallback(frames)
 
     if not frames:
         return FaceAnalysisResult(
