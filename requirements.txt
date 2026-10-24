@@ -1,0 +1,30 @@
+# SpeakSense — requirements.txt
+# Pinned for Python 3.10/3.11 Windows 11 compatibility.
+# numpy<2.0 required by mediapipe.
+
+# Core scientific stack
+numpy>=1.24.0,<2.0.0
+scipy>=1.11.0
+
+# Video processing
+opencv-python-headless>=4.9.0.80
+
+# Face analysis — mediapipe requires numpy 1.x
+mediapipe>=0.10.9
+
+# Audio processing
+librosa>=0.10.1
+soundfile>=0.12.1
+
+# Streamlit UI
+streamlit>=1.35.0
+
+# Visualization
+plotly>=5.20.0
+
+# Data handling (used by evaluation tab)
+pandas>=2.1.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
