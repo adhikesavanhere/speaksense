@@ -8,6 +8,10 @@ Mouth aperture = normalized vertical distance between upper and lower lips,
 divided by face height (inter-eye distance) to be scale-invariant.
 """
 
+import os
+import tempfile
+os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
+
 import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple

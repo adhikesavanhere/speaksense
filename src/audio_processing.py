@@ -67,11 +67,27 @@ class AudioProcessingResult:
 # FFmpeg audio extraction
 # ---------------------------------------------------------------------------
 
+def get_ffmpeg_cmd() -> Optional[str]:
+    """Return the path or command for ffmpeg (system PATH or imageio_ffmpeg bundled binary)."""
+    import shutil
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, RuntimeError, Exception):
+        return None
+
+
 def check_ffmpeg() -> bool:
-    """Return True if ffmpeg is available on PATH."""
+    """Return True if ffmpeg is available (system PATH or bundled)."""
+    exe = get_ffmpeg_cmd()
+    if not exe:
+        return False
     try:
         result = subprocess.run(
-            ["ffmpeg", "-version"],
+            [exe, "-version"],
             capture_output=True,
             timeout=10,
         )
@@ -87,8 +103,15 @@ def extract_audio_to_wav(video_filepath: str, output_wav: str) -> Tuple[bool, st
 
     Returns (success: bool, message: str).
     """
+    exe = get_ffmpeg_cmd()
+    if not exe:
+        return False, (
+            "FFmpeg not found. Please install FFmpeg and ensure it is on your PATH.\n"
+            "Windows: https://ffmpeg.org/download.html"
+        )
+
     cmd = [
-        "ffmpeg",
+        exe,
         "-y",                          # overwrite output without asking
         "-i", video_filepath,
         "-vn",                         # no video in output

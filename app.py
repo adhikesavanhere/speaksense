@@ -11,6 +11,9 @@ import tempfile
 import time
 from pathlib import Path
 
+# Suppress matplotlib permission warnings on Windows
+os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
+
 import streamlit as st
 import numpy as np
 
@@ -708,20 +711,39 @@ with tab_evaluation:
         st.markdown("")
         st.markdown('<div class="section-title">🔬 Experiment Results</div>', unsafe_allow_html=True)
 
-        import pandas as pd
-        rows = []
+        # Render custom styled HTML table to avoid pyarrow/NumPy 2.x dependency issues
+        headers = ["True Offset (ms)", "Estimated (ms)", "Error (ms)", "Within Tolerance", "Peak Quality", "Verdict"]
+        table_html = [
+            '<div style="overflow-x: auto; margin: 16px 0; border-radius: 12px; border: 1px solid var(--border);">',
+            '<table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; text-align: left; background: var(--surface2);">',
+            '  <thead>',
+            '    <tr style="background: rgba(124, 106, 240, 0.15); border-bottom: 2px solid var(--border); color: var(--accent2);">'
+        ]
+        for h in headers:
+            table_html.append(f'<th style="padding: 12px 16px; font-weight: 600;">{h}</th>')
+        table_html.append('</tr></thead><tbody>')
+
         for exp in summary.experiments:
             verdict_str = exp.verdict.value
-            rows.append({
-                "True Offset (ms)": f"{exp.true_offset_ms:+.0f}",
-                "Estimated (ms)": f"{exp.estimated_offset_ms:+.0f}" if exp.estimated_offset_ms is not None else "—",
-                "Error (ms)": f"{exp.error_ms:.0f}" if exp.error_ms is not None else "—",
-                "Within Tolerance": "✅" if exp.within_tolerance else ("—" if exp.within_tolerance is None else "❌"),
-                "Peak Quality": f"{exp.peak_quality_ratio:.2f}" if exp.peak_quality_ratio is not None else "—",
-                "Verdict": verdict_str,
-            })
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+            true_off = f"{exp.true_offset_ms:+.0f}"
+            est_off = f"{exp.estimated_offset_ms:+.0f}" if exp.estimated_offset_ms is not None else "—"
+            err = f"{exp.error_ms:.0f}" if exp.error_ms is not None else "—"
+            tol = "✅" if exp.within_tolerance else ("—" if exp.within_tolerance is None else "❌")
+            pq = f"{exp.peak_quality_ratio:.2f}" if exp.peak_quality_ratio is not None else "—"
+            v_color = "#66bb6a" if verdict_str == "ALIGNED" else ("#ef5350" if verdict_str == "MISMATCH" else "#ffa726")
+
+            table_html.append(f'''
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 10px 16px; font-weight: 500; color: #fff;">{true_off}</td>
+              <td style="padding: 10px 16px; color: var(--text);">{est_off}</td>
+              <td style="padding: 10px 16px; color: var(--text);">{err}</td>
+              <td style="padding: 10px 16px;">{tol}</td>
+              <td style="padding: 10px 16px; color: var(--text);">{pq}</td>
+              <td style="padding: 10px 16px; font-weight: 600; color: {v_color};">{verdict_str}</td>
+            </tr>
+            ''')
+        table_html.append('</tbody></table></div>')
+        st.markdown("".join(table_html), unsafe_allow_html=True)
 
         # Chart
         eval_chart = build_evaluation_chart(summary)
